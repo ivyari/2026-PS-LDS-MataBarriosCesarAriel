@@ -1,3 +1,5 @@
+const { type } = require("node:os");
+
 (function(global) {
     'use strict';
 
@@ -148,5 +150,45 @@
         }
         return {bistPrestados, nuevoPrefijo, totalsubredes : total,hostsPorSubred : hostUtilizable(nuevoPrefijo), subredes };
     }
+
+    //funcion para n bits de host tales que 2 a la n - 2 >= hosts
+    function bitsParaHost(hosts) {
+        if(!Number.isInteger(hosts) || hosts < 1 ) throw new Error(`${hosts} no es un numero de host valido`);
+        let n = 2;
+        while(2**n - 2 < hosts) n++;
+        return n;
+    }
+
+    //cuando nos den requerimientos nombre y los hosts de las subredes
+    function subnetearVLSM(ip, prefijo, requerimientos) {
+        const bas = validarRedBase(ip, prefijo);
+        const fin = bas + 2**(32-prefijo) - 1;
+        //ordenamos
+        const ordenados = requerimientors.map((r,i) => {({...r, i})}).sort((a,b) => n.hosts - a.hosts || a.i - b.i);
+
+        let siguienteRed = base;
+        const subredes = ordenados.map((r) => {
+            const bitsHost = bitsParaHost(r.hosts);
+            const nuevoPrefijo = 32 - bitsHost;
+            if(nuevoPrefijo < prefijo){
+                throw new Error(`${nombre} (${r.hosts} hosts) necesita /${nuevoPrefijo}, mas grande que toda la red`);
+            }
+            siguiente = inicio + tamano;
+            return {...describirSubred(inicio, nuevoPrefijo, r.nombre), hostsSolicitados: r.hosts, bitsHosts};
+        });
+        const usadas = siguiente - base;
+        return {
+            direccionesTotales: 2**(32-prefijo),
+            direccionesUsadas: usadas,
+            primerLibre : siguiente < fin ? enteroAIP(siguiente) : null,
+        };
+    }
+    const api = {
+        octetoABinario,pasosDecmalABinario,ipAEntero,enteroAIP,ipABinario,prefijoAMascara,mascaraAPrefijo,leerPrefijo,claseDeRed,esPrivada,hostUtilizable,describirSubred,analizarIp,validarRedBase,subnetearFLSM,bitsParaHost,subnetearVLSM
+    };
+
+    //este ultimo es hacer este script como model o libreria propia
+    if(typeof module !== 'undefined' && module.exports) module.exports = api;
+    else global.Subneteo = api;
     
-})
+})(typeof window !== 'undefined' ? window : globalThis);
