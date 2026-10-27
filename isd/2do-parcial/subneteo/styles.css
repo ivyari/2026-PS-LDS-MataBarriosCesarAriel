@@ -193,6 +193,7 @@ button.quitar {
   margin: 2px 0 0;
   font-weight: 600;
   font-family: var(--mono);
+  overflow-wrap: anywhere;
 }
 
 .binario {
