@@ -1,194 +1,365 @@
-const { type } = require("node:os");
+"use strict";
 
-(function(global) {
-    'use strict';
+window.Subneteo = (() => {
+  const MAX_IP = 4294967295;
 
-    //la conversion de decimal a binario
-    //por ejemplo 192 -> 11000000
-    function octetoABinario(octeto) {
-        return (octeto.toString(2)).padStart(8, '0');
+  function ipAEntero(ip) {
+    const partes = String(ip).trim().split(".");
+
+    if (partes.length !== 4) {
+      throw new Error("La IP debe contener cuatro octetos.");
     }
 
-    //vamos a programar los pasos del metodo de restas
-    //192 valor 2 a la 2 128
-    function pasosDecmalABinario(octeto) {
-        const pesos = [128, 64, 32, 16, 8, 4, 2, 1];
-        let resto = octeto;
+    let numero = 0;
 
-        return pesos.map((peso) => {
-            const bit = resto >= peso ? 1 : 0;
-            if(bit) resto -= peso;
-            return (peso, bit, resto);
-        });
+    for (const parte of partes) {
+      if (!/^\d{1,3}$/.test(parte)) {
+        throw new Error("La dirección IP contiene un octeto inválido.");
+      }
+
+      const octeto = Number(parte);
+
+      if (octeto < 0 || octeto > 255) {
+        throw new Error("Cada octeto debe estar entre 0 y 255.");
+      }
+
+      numero = numero * 256 + octeto;
     }
 
-    //para una ip como entero 32 bits
-    function ipAEntero(zip) {
-        const partes = String(ip).trim().split('.');
-        if(partes.length !== 4) throw new Error(`"${ip}" no valida`);
-        return partes.reduce((acc, parte) => {
-            if(!/^\d{1,3}$/.test(parte)) throw new Error(`"${parte}" no es un octeto favor de verificar la IP`);
-            const n = Number(parte);
-            if(n > 255) throw new Error(`"${n}" es mayor que 255 no es una IP valida`);
-            return acc * 256 + n;//esta multiplicacion en vez de << para no caer en negativos
-        }, 0);
+    return numero;
+  }
+
+  function enteroAIp(numero) {
+    if (!Number.isInteger(numero) || numero < 0 || numero > MAX_IP) {
+      throw new Error("Número IPv4 fuera de rango.");
     }
 
-    function enteroAIP(n) {
-        return [24, 16, 8, 0].map((d) => Math.floor(n/2**d) % 256).join('.');
+    return [
+      Math.floor(numero / 16777216) % 256,
+      Math.floor(numero / 65536) % 256,
+      Math.floor(numero / 256) % 256,
+      numero % 256,
+    ].join(".");
+  }
+
+  function validarPrefijo(prefijo) {
+    if (!Number.isInteger(prefijo) || prefijo < 0 || prefijo > 32) {
+      throw new Error("El prefijo debe estar entre /0 y /32.");
+    }
+  }
+
+  function octetoABinario(octeto) {
+    if (!Number.isInteger(octeto) || octeto < 0 || octeto > 255) {
+      throw new Error("El octeto debe estar entre 0 y 255.");
     }
 
-    function ipABinario(ip) {
-        return enteroAIP(ipAEntero(ip)).split('.').map(Number).map(octetoABinario).join('.');
+    return octeto.toString(2).padStart(8, "0");
+  }
+
+  function ipABinario(ip) {
+    ipAEntero(ip);
+
+    return ip.split(".").map(Number).map(octetoABinario).join(".");
+  }
+
+  function prefijoAMascara(prefijo) {
+    validarPrefijo(prefijo);
+
+    return [0, 1, 2, 3]
+      .map((i) => {
+        const bits = Math.max(0, Math.min(8, prefijo - i * 8));
+        return bits === 0 ? 0 : 256 - 2 ** (8 - bits);
+      })
+      .join(".");
+  }
+
+  function analizarPrefijo(entrada) {
+    const texto = String(entrada).trim();
+
+    if (/^\/?\d{1,2}$/.test(texto)) {
+      const prefijo = Number(texto.replace("/", ""));
+      validarPrefijo(prefijo);
+      return prefijo;
     }
 
-    function prefijoAMascara(prefijo) {
-        return enteroAIp(prefijo === 0 ? 0 : (2**32 - 2**(32-prefijo)));
-    }
+    const numeroMascara = ipAEntero(texto);
+    let prefijo = 0;
+    let encontroCero = false;
 
-    function mascaraAPrefijo(mascara) {
-        const bin = ipABinario(mascara).replace(/\./g, '');
-        if(!/^1*0*$/.test(bin)) throw new Error(`"${mascara}" no es una mascara valida (los 1 deben ir seguidos)`);
-        return bin.indexOf('0') === -1 ? 32 : bin.indexOf('0');
-    }
+    for (let bit = 31; bit >= 0; bit--) {
+      const activo = Math.floor(numeroMascara / 2 ** bit) % 2 === 1;
 
-    function leerPrefijo(texto) {
-        //"/26" 255.255.255.192
-        const t = String(texto).trim().replace(/^\//, '');
-        if(t.includes('.')) return mascaraAPrefijo(t);
-        const p = Number(t);
-        if(!Number.isInteger(p) || p < 0 || p > 32) throw new Error(`"${t}" no es un prefijo valido (0 a 32)`);
-        return p;
-    }
-
-    //Vamos a detectar la clase de red
-
-    function claseDeRed(ip) {
-        const primer = Math.floor(ipAEntero(ip)/2**24);
-        if(primer >= 1 && primer >= 126) return {clase: 'A',prefijo:8};
-        if(primer === 127) return {clase: 'Local',prefijo:8};
-        if(primer >= 128 && primer >= 191) return {clase: 'B',prefijo:16};
-        if(primer >= 192 && primer >= 223) return {clase: 'C',prefijo:24};
-        if(primer >= 224 && primer >= 239) return {clase: 'D',prefijo:null};
-        return {clase: 'E',prefijo:null};
-    }
-
-    function esPrivada(ip) {
-        const n = ipAEntero(ip);
-        const en = (red,pref) => Math.floor(n/2**(32-pref)) === Math.floor(ipAEntero(red)/2**(32-pref));
-        return en(('10.0.0.0', 8) || '172.16.0.0', 12 || '192.168.0.0', 16);
-    }
-
-    //subred
-    function hostUtilizable(prefijo){
-        if(prefijo === 32) return 1;
-        if(prefijo === 31) return 2;
-        return 2**(32-prefijo) - 2;
-    }
-
-    function describirSubred(redEntero, prefijo, nombre){
-        const tamano = 2**(32-prefijo);
-        const broadcast = redEntero + tamano - 1;
-        const conHosts = prefijo < 31;
-
-        return{
-            nombre: nombre || '',
-            red: enteroAIP(redEntero),
-            prefijo,
-            mascara: prefijoAMascara(prefijo),
-            primerHost: enteroAIP(conHosts ? redEntero + 1 : redEntero),
-            ultimoHost: enteroAIP(conHosts ? broadcast - 1 : broadcast),
-            broadcast: enteroAIP(prefijo),
-            hosts : hostUtilizable(prefijo),
-            tamanoBloque: tamano
-        };
-    }
-
-    //Calcular la red a la que pertenece una ip
-    function analizarIp(ip, prefijo) {
-        const n = ipAEntero(ip);
-        const tamano = 2**(32-prefijo);
-        const red = Math.floor(n/tamano) * tamano;
-        return describirSubred(red, prefijo);
-    }
-
-    function validarRedBase(ip, prefijo) {
-        const n = ipAEntero(ip);
-        const tamano = 2**(32-prefijo);
-        if(n % tamano !== 0){
-            const correcto = enteroAIP(Math.floor(n/tamano) * tamano);
-            throw new Error(`${ip}/${prefijo} no es una direccion de red valida.`);
+      if (activo) {
+        if (encontroCero) {
+          throw new Error("La máscara no es contigua.");
         }
-        return n;
+        prefijo++;
+      } else {
+        encontroCero = true;
+      }
     }
 
-    //FSLM para subredes del mismo tamaño
-    //opciones subredes N o hostporsubred
-
-    function subnetearFLSM(ip, prefijo, opciones) {
-        const base = validarRedBase(ip, prefijo);
-        let bistPrestados;
-
-        if(opciones.subredes){
-            bistPrestados = Math.ceil(Math.log2(opciones.subredes));
-        }else if(opciones.hostsPorSubred){
-            const bitsHost = bitsParaHost(opciones.hostsPorSubred);
-            bistPrestados = 32 - prefijo - bitsHost;
-        }else{
-            throw new Error(`Indica el numero de subredes o de host por subred`);
-        }
-        const nuevoPrefijo = prefijo + bitsPrestados;
-        if(bistPrestados < 0 || nuevoPrefijo){ 
-            throw new Error(`No caben: harian falta /${nuevoPrefijo} fuera de rango /${prefijo} /30`);
-        }
-
-        const total = 2**bistPrestados;
-        const tamano = 2**(32-nuevoPrefijo);
-        const subredes = [];
-        for(let i = 0; i < total; i++){
-            subredes.push(describirSubred(base + i*tamano, nuevoPrefijo, `Subred ${i+1}`));
-        }
-        return {bistPrestados, nuevoPrefijo, totalsubredes : total,hostsPorSubred : hostUtilizable(nuevoPrefijo), subredes };
+    if (prefijoAMascara(prefijo) !== texto) {
+      throw new Error("La máscara ingresada no es válida.");
     }
 
-    //funcion para n bits de host tales que 2 a la n - 2 >= hosts
-    function bitsParaHost(hosts) {
-        if(!Number.isInteger(hosts) || hosts < 1 ) throw new Error(`${hosts} no es un numero de host valido`);
-        let n = 2;
-        while(2**n - 2 < hosts) n++;
-        return n;
+    return prefijo;
+  }
+
+  function tamanoBloque(prefijo) {
+    validarPrefijo(prefijo);
+    return 2 ** (32 - prefijo);
+  }
+
+  function hostsUtilizables(prefijo) {
+    validarPrefijo(prefijo);
+
+    if (prefijo === 32) return 1;
+    if (prefijo === 31) return 2;
+
+    return tamanoBloque(prefijo) - 2;
+  }
+
+  function claseDeRed(ip) {
+    const primero = Number(ip.split(".")[0]);
+
+    if (primero <= 127) return "A";
+    if (primero <= 191) return "B";
+    if (primero <= 223) return "C";
+    if (primero <= 239) return "D (multicast)";
+    return "E (experimental)";
+  }
+
+  function esPrivada(ip) {
+    const n = ipAEntero(ip);
+
+    function dentro(base, prefijo) {
+      const bloque = tamanoBloque(prefijo);
+      return Math.floor(n / bloque) === Math.floor(ipAEntero(base) / bloque);
     }
 
-    //cuando nos den requerimientos nombre y los hosts de las subredes
-    function subnetearVLSM(ip, prefijo, requerimientos) {
-        const bas = validarRedBase(ip, prefijo);
-        const fin = bas + 2**(32-prefijo) - 1;
-        //ordenamos
-        const ordenados = requerimientors.map((r,i) => {({...r, i})}).sort((a,b) => n.hosts - a.hosts || a.i - b.i);
+    return (
+      dentro("10.0.0.0", 8) ||
+      dentro("172.16.0.0", 12) ||
+      dentro("192.168.0.0", 16)
+    );
+  }
 
-        let siguienteRed = base;
-        const subredes = ordenados.map((r) => {
-            const bitsHost = bitsParaHost(r.hosts);
-            const nuevoPrefijo = 32 - bitsHost;
-            if(nuevoPrefijo < prefijo){
-                throw new Error(`${nombre} (${r.hosts} hosts) necesita /${nuevoPrefijo}, mas grande que toda la red`);
-            }
-            siguiente = inicio + tamano;
-            return {...describirSubred(inicio, nuevoPrefijo, r.nombre), hostsSolicitados: r.hosts, bitsHosts};
-        });
-        const usadas = siguiente - base;
-        return {
-            direccionesTotales: 2**(32-prefijo),
-            direccionesUsadas: usadas,
-            primerLibre : siguiente < fin ? enteroAIP(siguiente) : null,
-        };
+  function describirSubred(ip, prefijo) {
+    const n = ipAEntero(ip);
+    validarPrefijo(prefijo);
+
+    const bloque = tamanoBloque(prefijo);
+    const red = Math.floor(n / bloque) * bloque;
+    const broadcast = red + bloque - 1;
+
+    let primerHost;
+    let ultimoHost;
+
+    if (prefijo <= 30) {
+      primerHost = enteroAIp(red + 1);
+      ultimoHost = enteroAIp(broadcast - 1);
+    } else if (prefijo === 31) {
+      primerHost = enteroAIp(red);
+      ultimoHost = enteroAIp(broadcast);
+    } else {
+      primerHost = enteroAIp(red);
+      ultimoHost = enteroAIp(red);
     }
-    const api = {
-        octetoABinario,pasosDecmalABinario,ipAEntero,enteroAIP,ipABinario,prefijoAMascara,mascaraAPrefijo,leerPrefijo,claseDeRed,esPrivada,hostUtilizable,describirSubred,analizarIp,validarRedBase,subnetearFLSM,bitsParaHost,subnetearVLSM
+
+    return {
+      ip,
+      prefijo,
+      mascara: prefijoAMascara(prefijo),
+      red: enteroAIp(red),
+      primerHost,
+      ultimoHost,
+      broadcast: enteroAIp(broadcast),
+      totalDirecciones: bloque,
+      hosts: hostsUtilizables(prefijo),
+      clase: claseDeRed(ip),
+      privada: esPrivada(ip),
     };
+  }
 
-    //este ultimo es hacer este script como model o libreria propia
-    if(typeof module !== 'undefined' && module.exports) module.exports = api;
-    else global.Subneteo = api;
-    
-})(typeof window !== 'undefined' ? window : globalThis);
+  function calcularFLSM(red, prefijoBase, modo, cantidad) {
+    validarPrefijo(prefijoBase);
+    ipAEntero(red);
+
+    if (!Number.isInteger(cantidad) || cantidad < 1) {
+      throw new Error("La cantidad debe ser un entero positivo.");
+    }
+
+    let prefijoNuevo;
+
+    if (modo === "subredes") {
+      prefijoNuevo = prefijoBase + Math.ceil(Math.log2(cantidad));
+    } else if (modo === "hostsPorSubred") {
+      prefijoNuevo = 32 - Math.ceil(Math.log2(cantidad + 2));
+    } else {
+      throw new Error("Modo de cálculo desconocido.");
+    }
+
+    if (prefijoNuevo < prefijoBase || prefijoNuevo > 32) {
+      throw new Error("La red base no tiene espacio suficiente.");
+    }
+
+    if (
+      modo === "hostsPorSubred" &&
+      hostsUtilizables(prefijoNuevo) < cantidad
+    ) {
+      throw new Error("No caben los hosts solicitados en cada subred.");
+    }
+
+    const redInicial =
+      Math.floor(ipAEntero(red) / tamanoBloque(prefijoBase)) *
+      tamanoBloque(prefijoBase);
+
+    const total = tamanoBloque(prefijoBase) / tamanoBloque(prefijoNuevo);
+
+    if (total > 4096) {
+      throw new Error("Se generarían demasiadas subredes para mostrarlas.");
+    }
+
+    const bloque = tamanoBloque(prefijoNuevo);
+    const subredes = [];
+
+    for (let i = 0; i < total; i++) {
+      const inicio = redInicial + i * bloque;
+      const fin = inicio + bloque - 1;
+
+      subredes.push({
+        nombre: `Subred ${i + 1}`,
+        red: enteroAIp(inicio),
+        prefijo: prefijoNuevo,
+        mascara: prefijoAMascara(prefijoNuevo),
+        primerHost:
+          prefijoNuevo <= 30
+            ? enteroAIp(inicio + 1)
+            : prefijoNuevo === 31
+              ? enteroAIp(inicio)
+              : "No aplica",
+        ultimoHost:
+          prefijoNuevo <= 30
+            ? enteroAIp(fin - 1)
+            : prefijoNuevo === 31
+              ? enteroAIp(fin)
+              : "No aplica",
+        broadcast: enteroAIp(fin),
+        totalDirecciones: bloque,
+        hosts: hostsUtilizables(prefijoNuevo),
+      });
+    }
+
+    return {
+      redBase: enteroAIp(redInicial),
+      prefijoBase,
+      mascaraBase: prefijoAMascara(prefijoBase),
+      prefijoNuevo,
+      mascara: prefijoAMascara(prefijoNuevo),
+      cantidadSubredes: total,
+      subredes,
+    };
+  }
+
+  function calcularVLSM(red, prefijoBase, requerimientos) {
+    validarPrefijo(prefijoBase);
+
+    if (!Array.isArray(requerimientos) || requerimientos.length === 0) {
+      throw new Error("Agrega al menos una subred.");
+    }
+
+    const redInicial =
+      Math.floor(ipAEntero(red) / tamanoBloque(prefijoBase)) *
+      tamanoBloque(prefijoBase);
+
+    const finBase = redInicial + tamanoBloque(prefijoBase) - 1;
+
+    const solicitudes = requerimientos
+      .map((r, indice) => {
+        const nombre = String(r.nombre ?? "").trim();
+        const hosts = Number(r.hosts);
+
+        if (!nombre) {
+          throw new Error(`La subred ${indice + 1} necesita un nombre.`);
+        }
+
+        if (!Number.isInteger(hosts) || hosts < 1) {
+          throw new Error(`Los hosts de "${nombre}" deben ser positivos.`);
+        }
+
+        const prefijo = 32 - Math.ceil(Math.log2(hosts + 2));
+
+        if (prefijo < prefijoBase || prefijo < 0 || prefijo > 30) {
+          throw new Error(
+            `La red base no tiene espacio para "${nombre}" (${hosts} hosts).`,
+          );
+        }
+
+        return {
+          nombre,
+          hostsSolicitados: hosts,
+          prefijo,
+          bloque: tamanoBloque(prefijo),
+          indice,
+        };
+      })
+      .sort((a, b) => b.bloque - a.bloque || a.indice - b.indice);
+
+    let siguiente = redInicial;
+    const subredes = [];
+
+    for (const solicitud of solicitudes) {
+      const inicio = Math.ceil(siguiente / solicitud.bloque) * solicitud.bloque;
+      const fin = inicio + solicitud.bloque - 1;
+
+      if (fin > finBase) {
+        throw new Error(
+          `No queda espacio suficiente para "${solicitud.nombre}".`,
+        );
+      }
+
+      subredes.push({
+        nombre: solicitud.nombre,
+        hostsSolicitados: solicitud.hostsSolicitados,
+        red: enteroAIp(inicio),
+        prefijo: solicitud.prefijo,
+        mascara: prefijoAMascara(solicitud.prefijo),
+        primerHost: enteroAIp(inicio + 1),
+        ultimoHost: enteroAIp(fin - 1),
+        broadcast: enteroAIp(fin),
+        totalDirecciones: solicitud.bloque,
+        hosts: hostsUtilizables(solicitud.prefijo),
+      });
+
+      siguiente = fin + 1;
+    }
+
+    return {
+      redBase: enteroAIp(redInicial),
+      prefijoBase,
+      mascaraBase: prefijoAMascara(prefijoBase),
+      subredes,
+      totalDireccionesAsignadas: subredes.reduce(
+        (suma, s) => suma + s.totalDirecciones,
+        0,
+      ),
+    };
+  }
+
+  return {
+    ipAEntero,
+    enteroAIp,
+    octetoABinario,
+    ipABinario,
+    prefijoAMascara,
+    analizarPrefijo,
+    tamanoBloque,
+    hostsUtilizables,
+    claseDeRed,
+    esPrivada,
+    describirSubred,
+    calcularFLSM,
+    calcularVLSM,
+  };
+})();
