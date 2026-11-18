@@ -284,7 +284,28 @@ function crearJWT(config, pool) {
     });
   });
 
-  //ejemplo de revocacion de 
+  //ejemplo de revocacion de un token todavia valido
+  app.post('/api/jwt/refresh', requiereJWT, async (req, res) => {
+    const {sub, usuario, nombre, rol} = req.jwt;
+    res.json({ token: firmarToken({id: sub, usuario, nombre, rol}) });
+  });
+
+  app.get('/api/jwt/reporte', requiereJWT, requiereRolJWT('admin'), (req, res) => {
+    res.json({ reporte: 'Talleres: 3'});
+  }); 
+
+  //que le pasa al token cuando logout
+  app.post('/api/jwt/logout', requiereJWT, async (req, res, next) => {
+    try{
+      if (config.jwtRevocar) {
+        await tokens.revocar(req.jwt.jti, req.jwt.usuario, req.jwt.exp);
+        res.json({ mensaje: 'Token reocado en la el servidor, se anota en la lista negra', recocacion: true });
+      }
+      res.json({ mensaje: 'El servidor no guarda nada, solo se puede borrar el token desde el navegador', recocacion: false });
+    } catch (error) {
+      next(error);
+    }   
+  });
 
 }
 
