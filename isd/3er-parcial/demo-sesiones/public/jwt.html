@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo de sesiones · JWT</title>
+  <link rel="stylesheet" href="estilos.css">
+  <style>
+    header a { color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Demo de sesiones con JWT · CECyT 9</h1>
+    <p>Aquí la sesión NO va en una cookie: va dentro de un token que guarda la página y manda en el encabezado
+      <code>Authorization: Bearer &lt;token&gt;</code>. Abre <strong>F12 → Network</strong> para verlo.
+      · <a href="/">← Volver a la demo con cookie</a></p>
+  </header>
+
+  <main>
+    <section class="tarjeta">
+      <h2>1 · Iniciar sesión con JWT</h2>
+      <form id="jwt-form-login">
+        <label>Usuario
+          <select id="jwt-usuario">
+            <option value="ana">ana (alumno)</option>
+            <option value="luis">luis (alumno)</option>
+            <option value="admin">admin (administrador)</option>
+          </select>
+        </label>
+        <label>Contraseña
+          <input id="jwt-contrasena" type="password" value="ana12345" autocomplete="off">
+        </label>
+        <button type="submit">Entrar (POST /api/jwt/login)</button>
+      </form>
+      <p class="detalle">El servidor no crea sesión ni cookie: responde con el token y esta página lo guarda en una
+        variable de JavaScript (en memoria). Si recargas la página, el token se pierde.</p>
+    </section>
+
+    <section class="tarjeta">
+      <h2>2 · Elementos de la sesión (GET /api/jwt/sesion)</h2>
+      <p id="jwt-estado" class="estado sin-sesion">Sin token</p>
+      <table class="elementos">
+        <tbody id="jwt-elementos"><tr><td colspan="2">(inicia sesión para verlos)</td></tr></tbody>
+      </table>
+      <button id="jwt-btn-sesion" type="button">Volver a preguntar</button>
+    </section>
+
+    <section class="tarjeta ancha">
+      <h2>3 · El token</h2>
+      <p class="detalle">Tiene tres partes separadas por puntos:
+        <span class="t-header"><strong>encabezado</strong></span> ·
+        <span class="t-payload"><strong>payload</strong> (los datos)</span> ·
+        <span class="t-firma"><strong>firma</strong></span>.
+        Las dos primeras solo están en Base64URL: cualquiera las puede leer. Lo que nadie puede hacer sin el secreto
+        del servidor es cambiarlas, porque la firma ya no coincidiría.</p>
+      <div id="jwt-token" class="token">(todavía no hay token)</div>
+      <div class="botones">
+        <button id="jwt-btn-copiar" type="button" class="secundario">Copiar token</button>
+        <button id="jwt-btn-olvidar" type="button" class="secundario">Borrar el token de la página</button>
+      </div>
+      <p class="detalle">Así viaja en cada petición protegida:</p>
+      <pre id="jwt-encabezado">(sin encabezado Authorization)</pre>
+      <div class="partes">
+        <div>
+          <h3 class="t-header">Encabezado decodificado</h3>
+          <pre id="jwt-header-json">—</pre>
+        </div>
+        <div>
+          <h3 class="t-payload">Payload decodificado</h3>
+          <pre id="jwt-payload-json">—</pre>
+          <p id="jwt-fechas" class="detalle"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tarjeta">
+      <h2>4 · Pedirle cosas al servidor con el token</h2>
+      <div class="botones">
+        <button type="button" data-metodo="GET" data-url="/api/jwt/sesion">GET /api/jwt/sesion</button>
+        <button type="button" data-metodo="GET" data-url="/api/jwt/perfil">GET /api/jwt/perfil</button>
+        <button type="button" data-metodo="GET" data-url="/api/jwt/reporte">GET /api/jwt/reporte</button>
+        <button type="button" data-metodo="POST" data-url="/api/jwt/refresh">POST /api/jwt/refresh</button>
+        <button type="button" data-metodo="POST" data-url="/api/jwt/logout" class="peligro">POST /api/jwt/logout</button>
+      </div>
+      <ol id="jwt-bitacora" class="bitacora" reversed></ol>
+    </section>
+
+    <section class="tarjeta">
+      <h2>5 · Lo que guarda el servidor: la lista negra</h2>
+      <p id="jwt-donde" class="estado-almacen">…</p>
+      <p class="detalle">Solo para la clase (GET /api/diagnostico/tokens). Con JWT el servidor no guarda las sesiones;
+        solo anota los tokens revocados (logout o refresh) en la tabla <code>tokens_revocados</code>.</p>
+      <table>
+        <thead><tr><th>jti</th><th>Usuario</th><th>Vencía</th><th>Revocado</th></tr></thead>
+        <tbody id="jwt-tabla-revocados"><tr><td colspan="4">(vacía)</td></tr></tbody>
+      </table>
+      <button id="jwt-btn-revocados" type="button">Actualizar tabla</button>
+    </section>
+  </main>
+
+  <script src="jwt.js"></script>
+</body>
+</html>
