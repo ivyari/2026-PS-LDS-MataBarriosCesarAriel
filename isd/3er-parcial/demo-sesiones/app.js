@@ -42,9 +42,7 @@ function crearApp(config, pool) {
   const usuarios = crearModeloUsuarios(pool);
   const tokens   = crearModeloTokens(pool);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // HERRAMIENTAS JWT  (compartidas por Parte 1 y Parte 2)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // HERRAMIENTAS JWT  (compartidas por Parte 1 y Parte 2)  
 
   const SECRETO_JWT    = config.jwtSecreto || process.env.JWT_SECRET || 'secreto-jwt-solo-para-la-demo';
   const EXPIRA_JWT_SEG = config.jwtExpiraSeg || 5 * 60;
@@ -106,9 +104,7 @@ function crearApp(config, pool) {
     return true;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
   // PARTE 1 · SESIONES CON COOKIE (con su token JWT integrado)
-  // ═══════════════════════════════════════════════════════════════════════════
 
   // ¿Dónde viven las sesiones?
   //  'memoria' → MemoryStore (proceso de Node, se pierden al reiniciar; NO es el navegador).
@@ -430,22 +426,36 @@ function crearApp(config, pool) {
     }
   });
 
-  // Solo para clase: la lista negra (equivalente de /api/diagnostico/sesiones).
-  app.get('/api/diagnostico/tokens', async (req, res, next) => {
-    try {
-      const filas = await tokens.listar();
-      res.json({
-        revocacion: Boolean(config.jwtRevocar),
-        revocados:  filas.map((f) => ({
-          jti:        idCorto(f.jti),
-          usuario:    f.usuario,
-          expira:     f.expira,
-          revocadoEn: f.revocado_en,
-        })),
-      });
-    } catch (error) {
-      next(error);
+  // Solo para clase: la lista negra solo puede verla un usuario administrador.
+  // Si la petición usa cookie, se exige sesión + rol admin.
+  // Si usa Authorization Bearer, se exige JWT válido + rol admin.
+  app.get('/api/diagnostico/tokens', (req, res, next) => {
+    const cargarListaNegra = async () => {
+      try {
+        const filas = await tokens.listar();
+        res.json({
+          revocacion: Boolean(config.jwtRevocar),
+          revocados:  filas.map((f) => ({
+            jti:        idCorto(f.jti),
+            usuario:    f.usuario,
+            expira:     f.expira,
+            revocadoEn: f.revocado_en,
+          })),
+        });
+      } catch (error) {
+        next(error);
+      }
+    };
+
+    if ((req.get('authorization') || '').startsWith('Bearer ')) {
+      return requiereJWT(req, res, () =>
+        requiereRolJWT('admin')(req, res, cargarListaNegra),
+      );
     }
+
+    return requiereSesion(req, res, () =>
+      requiereRol('admin')(req, res, cargarListaNegra),
+    );
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

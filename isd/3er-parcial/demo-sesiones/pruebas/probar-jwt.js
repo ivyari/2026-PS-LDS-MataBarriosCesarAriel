@@ -46,7 +46,8 @@ async function servidor(cfg) {
   r = await s.pedir('GET', '/api/jwt/reporte', { token: 'Bearer ' + tokAna });
   revisar(r.status === 403 && /Eres ana/.test(r.datos.error), 'ana en /api/jwt/reporte → 403', r);
   r = await s.pedir('POST', '/api/jwt/login', { cuerpo: { usuario: 'admin', contrasena: 'admin12345' } });
-  r = await s.pedir('GET', '/api/jwt/reporte', { token: 'Bearer ' + r.datos.token });
+  const tokAdmin = r.datos.token;
+  r = await s.pedir('GET', '/api/jwt/reporte', { token: 'Bearer ' + tokAdmin });
   revisar(r.status === 200 && /Talleres/.test(r.datos.reporte), 'admin en /api/jwt/reporte → 200', r);
   r = await s.pedir('POST', '/api/jwt/refresh', { token: 'Bearer ' + tokAna });
   const tokNuevo = r.datos.token;
@@ -59,7 +60,11 @@ async function servidor(cfg) {
   revisar(r.status === 200 && r.datos.revocado === true, 'logout JWT → revocado: true (una sola respuesta)', r);
   r = await s.pedir('GET', '/api/jwt/perfil', { token: 'Bearer ' + tokNuevo });
   revisar(r.status === 401 && /revocado/.test(r.datos.error), 'después del logout el token ya no sirve → 401 revocado', r);
+  r = await s.pedir('GET', '/api/diagnostico/tokens', { token: 'Bearer ' + tokAna });
+  revisar(r.status === 403, 'ana en /api/diagnostico/tokens → 403', r);
   r = await s.pedir('GET', '/api/diagnostico/tokens');
+  revisar(r.status === 401, 'lista negra sin autenticación → 401', r);
+  r = await s.pedir('GET', '/api/diagnostico/tokens', { token: 'Bearer ' + tokAdmin });
   revisar(r.status === 200 && r.datos.revocados.length >= 2 && r.datos.revocados.every((t) => t.usuario === 'ana'), '/api/diagnostico/tokens lista la lista negra', r);
   r = await s.pedir('GET', '/api/sesion', { token: 'Bearer ' + tokNuevo });
   revisar(r.status === 401, 'el JWT no sirve en las rutas de cookie (/api/sesion → 401)', r);

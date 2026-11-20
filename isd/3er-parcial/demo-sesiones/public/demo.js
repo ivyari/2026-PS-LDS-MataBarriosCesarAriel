@@ -83,13 +83,17 @@ async function mostrarEstado() {
 
   if (status === 200 && datos && datos.usuario) {
     const { nombre, rol } = datos.usuario;
+    rolActual = rol;
     estado.textContent = `Con sesión: ${nombre} (${rol}) · sesión ${datos.sesion} · vence en ${datos.expiraEnSegundos} s`;
     estado.className = 'estado con-sesion';
   } else {
+    rolActual = null;
     estado.textContent = status === 0 ? 'Sin conexión con el servidor' : `Sin sesión (el servidor responde ${status})`;
     estado.className = 'estado sin-sesion';
   }
 
+  // Solo cambia la interfaz: el servidor sigue siendo la protección principal.
+  $('tarjeta-lista-negra').hidden = rolActual !== 'admin';
   $('cookie-js').textContent = document.cookie || '(vacío)';
 }
 
@@ -101,6 +105,7 @@ async function mostrarEstado() {
 // ---------------------------------------------------------------------------------------------
 let tokenActual = null; // se conserva tras el logout para poder comprobar que quedó revocado
 let relojToken = null; // intervalo de la cuenta regresiva
+let rolActual = null; // determina si el usuario puede ver la tarjeta de la lista negra
 
 function estadoToken(texto, clase) {
   $('token-estado').textContent = texto;
@@ -282,6 +287,11 @@ function jtiDelToken(token) {
 }
 
 async function mostrarListaNegra() {
+  // Un alumno no muestra ni solicita la lista; el servidor rechaza el acceso como 403 si intenta hacerlo.
+  if (rolActual !== 'admin') {
+    $('tarjeta-lista-negra').hidden = true;
+    return;
+  }
   const { status, datos } = await llamar('GET', '/api/diagnostico/tokens');
   const tabla = $('tabla-lista-negra');
   tabla.replaceChildren();
@@ -320,7 +330,9 @@ async function mostrarListaNegra() {
 }
 
 async function refrescarTodo() {
-  await Promise.all([mostrarEstado(), mostrarSesiones(), mostrarListaNegra()]);
+  // Primero se determina el rol y después se consulta la lista si corresponde.
+  await mostrarEstado();
+  await Promise.all([mostrarSesiones(), mostrarListaNegra()]);
 }
 
 // ---------------------------------------------------------------------------------------------

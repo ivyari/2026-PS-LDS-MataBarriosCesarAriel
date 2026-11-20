@@ -6,6 +6,7 @@ const $ = (id) => document.getElementById(id);
 // script de la página (un XSS) podría leerlo de ahí; a cambio, al recargar la página se pierde.
 let token = null;
 let reloj = null; // intervalo que actualiza los segundos que le quedan al token
+let rolActual = null; // determina si se muestra la tarjeta de la lista negra
 
 // Una sola función para hablar con la API. Si hay token, lo manda como  Authorization: Bearer <token>.
 async function llamar(metodo, url, cuerpo) {
@@ -118,6 +119,8 @@ async function mostrarSesion() {
   tabla.replaceChildren();
 
   if (!token) {
+    rolActual = null;
+    $('tarjeta-lista-negra-jwt').hidden = true;
     estado.textContent = 'Sin token';
     estado.className = 'estado sin-sesion';
     tabla.append(fila('—', '(inicia sesión para verlos)'));
@@ -126,6 +129,8 @@ async function mostrarSesion() {
 
   const { status, datos } = await llamar('GET', '/api/jwt/sesion');
   if (status !== 200 || !datos) {
+    rolActual = null;
+    $('tarjeta-lista-negra-jwt').hidden = true;
     estado.textContent = `El servidor no acepta el token: ${datos && datos.error ? datos.error : `código ${status}`}`;
     estado.className = 'estado sin-sesion';
     tabla.append(fila('—', 'El token ya no sirve. Inicia sesión otra vez o bórralo.'));
@@ -133,6 +138,9 @@ async function mostrarSesion() {
   }
 
   const { usuario: u } = datos;
+  rolActual = u.rol;
+  // Este ocultamiento mejora la interfaz; el servidor también verifica el rol admin.
+  $('tarjeta-lista-negra-jwt').hidden = rolActual !== 'admin';
   estado.className = 'estado con-sesion';
   const pintarEstado = () => {
     const quedan = Math.max(0, Math.round((Date.parse(datos.expiraEn) - Date.now()) / 1000));
@@ -166,6 +174,11 @@ async function mostrarSesion() {
 
 // La lista negra que guarda el servidor.
 async function mostrarRevocados() {
+  // Si no hay rol admin activo, la tarjeta permanece oculta y no se consulta el endpoint.
+  if (rolActual !== 'admin') {
+    $('tarjeta-lista-negra-jwt').hidden = true;
+    return;
+  }
   const { status, datos } = await llamar('GET', '/api/diagnostico/tokens');
   const tabla = $('jwt-tabla-revocados');
   tabla.replaceChildren();
@@ -198,7 +211,9 @@ async function mostrarRevocados() {
 
 async function refrescarTodo() {
   mostrarToken();
-  await Promise.all([mostrarSesion(), mostrarRevocados()]);
+  // Primero se determina el rol a partir del JWT y después se consulta la lista si es admin.
+  await mostrarSesion();
+  await mostrarRevocados();
 }
 
 // ---------- Eventos ----------
